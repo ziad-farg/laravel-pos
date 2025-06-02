@@ -20,32 +20,59 @@ class CartController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'barcode' => 'required|exists:products,barcode',
+            'items' => 'required|array|min:1',
+            'items.*.barcode' => 'required|string|exists:products,barcode',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
-        $barcode = $request->barcode;
 
-        $product = Product::where('barcode', $barcode)->first();
-        $cart = $request->user()->cart()->where('barcode', $barcode)->first();
-        if ($cart) {
-            // check product quantity
-            if ($product->quantity <= $cart->pivot->quantity) {
-                return response([
-                    'message' => __('cart.available', ['quantity' => $product->quantity]),
-                ], 400);
+        $addedOrUpdatedProducts = [];
+
+        foreach ($request->items as $cartItemData) {
+            $barcode = $cartItemData['barcode'];
+            $requestedQuantity = $cartItemData['quantity'];
+            $discountPercentage = $cartItemData['discount_percentage'] ?? 0;
+
+            $product = Product::where('barcode', $barcode)->first();
+
+            if (!$product) {
+                continue;
             }
-            // update only quantity
-            $cart->pivot->quantity = $cart->pivot->quantity + 1;
-            $cart->pivot->save();
-        } else {
-            if ($product->quantity < 1) {
-                return response([
-                    'message' => __('cart.outstock'),
-                ], 400);
+
+            $cartItem = $request->user()->cart()->where('product_id', $product->id)->first();
+
+            if ($cartItem) {
+                $newQuantityInCart = $cartItem->pivot->quantity + $requestedQuantity;
+
+                if ($product->quantity < $newQuantityInCart) {
+                    continue;
+                }
+
+                $cartItem->pivot->quantity = $newQuantityInCart;
+                $cartItem->pivot->discount_percentage = $discountPercentage;
+                $cartItem->pivot->save();
+            } else {
+
+                if ($product->quantity < $requestedQuantity) {
+
+                    continue;
+                }
+
+                $request->user()->cart()->attach($product->id, [
+                    'quantity' => $requestedQuantity,
+                    'discount_percentage' => $discountPercentage
+                ]);
             }
-            $request->user()->cart()->attach($product->id, ['quantity' => 1]);
+
+            $addedOrUpdatedProducts[] = $product->id;
         }
 
-        return response('', 204);
+
+        return response()->json([
+            'message' => __('cart.items_processed_successfully'),
+            'success' => true,
+            'cart_items' => $request->user()->cart()->withPivot('quantity', 'discount_percentage')->get(),
+        ], 200);
     }
 
     public function changeQty(Request $request)

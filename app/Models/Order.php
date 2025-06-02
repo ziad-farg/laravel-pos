@@ -37,7 +37,7 @@ class Order extends Model
     public function total()
     {
         return $this->items->map(function ($i) {
-            return $i->price;
+            return $i->price_after_discount;
         })->sum();
     }
 
