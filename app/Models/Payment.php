@@ -10,5 +10,11 @@ class Payment extends Model
         'amount',
         'order_id',
         'user_id',
+        'till_id',
     ];
+
+    public function till()
+    {
+        return $this->belongsTo(Till::class);
+    }
 }

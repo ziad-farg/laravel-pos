@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Till;
 use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Session;
 use App\Http\Requests\OrderStoreRequest;
 
 class OrderController extends Controller
@@ -35,14 +37,31 @@ class OrderController extends Controller
 
     public function store(OrderStoreRequest $request)
     {
+        $userId = Auth::id();
+
+        $currentTillId = Session::get('current_till_id');
+
+        if (!$currentTillId) {
+            return response()->json(['message' => 'No till is currently open to process this order. Please open a till first.'], 400);
+        }
+
+        $till = Till::where('id', $currentTillId)
+            ->where('user_id', $userId)
+            ->whereNull('closed_at')
+            ->first();
+
+        if (!$till) {
+            Session::forget('current_till_id');
+            return response()->json(['message' => 'The associated till is not valid or has been closed. Please open a new till.'], 400);
+        }
+
         $order = Order::create([
             'customer_id' => $request->customer_id,
-            'user_id' => $request->user()->id,
+            'user_id' => $userId,
         ]);
 
         $cart = $request->user()->cart()->get();
         foreach ($cart as $item) {
-
             $originalPricePerUnit = $item->price;
             $quantity = $item->pivot->quantity;
             $discountPercentage = $item->pivot->discount_percentage ?? 0;
@@ -61,10 +80,13 @@ class OrderController extends Controller
         }
 
         $request->user()->cart()->detach();
+
         $order->payments()->create([
             'amount' => $request->amount,
-            'user_id' => $request->user()->id,
+            'user_id' => $userId,
+            'till_id' => $currentTillId,
         ]);
+
         return response()->json(['message' => 'Order created successfully!', 'order_id' => $order->id], 201);
     }
 
