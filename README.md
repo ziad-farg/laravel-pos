@@ -65,7 +65,7 @@ Rename or copy `.env.example` file to `.env` 1.`php artisan key:generate` to gen
 - [x] Responsive POS interface (for desktop & tablet)
 - [x] Add products via barcode scan or name search
 - [x] Display cart with items, quantity
-- [ ] Support multiple payment methods (cash, card, etc.)
+- [x] Support multiple payment methods (cash, card, etc.)
 - [x] Apply discount by specific items
 - [x] Apply discount by invoice (overall discount)
 - [ ] Print or download sale receipt
