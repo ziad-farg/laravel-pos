@@ -66,8 +66,8 @@ Rename or copy `.env.example` file to `.env` 1.`php artisan key:generate` to gen
 - [x] Add products via barcode scan or name search
 - [x] Display cart with items, quantity
 - [ ] Support multiple payment methods (cash, card, etc.)
-- [ ] Apply discount by specific items
-- [ ] Apply discount by invoice (overall discount)
+- [x] Apply discount by specific items
+- [x] Apply discount by invoice (overall discount)
 - [ ] Print or download sale receipt
 
 #### 📦 Orders
