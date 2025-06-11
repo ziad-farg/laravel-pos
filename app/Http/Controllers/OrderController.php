@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Till;
 use App\Models\Order;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Session;
 use App\Http\Requests\OrderStoreRequest;
 
 class OrderController extends Controller
@@ -21,7 +20,7 @@ class OrderController extends Controller
         if ($request->end_date) {
             $orders = $orders->where('created_at', '<=', $request->end_date . ' 23:59:59');
         }
-        $orders = $orders->with(['items.product', 'payments', 'customer'])->latest()->paginate(10);
+        $orders = $orders->with(['orderItems.product', 'payments', 'customer'])->latest()->paginate(10);
 
         $total = $orders->map(function ($i) {
             return $i->total();
@@ -30,86 +29,80 @@ class OrderController extends Controller
             return $i->receivedAmount();
         })->sum();
 
-        // return response()->json($orders);
-
         return view('orders.index', compact('orders', 'total', 'receivedAmount'));
     }
 
     public function store(OrderStoreRequest $request)
     {
-        $userId = Auth::id();
-
-        $currentTillId = Session::get('current_till_id');
-
-        if (!$currentTillId) {
-            return response()->json(['message' => 'No till is currently open to process this order. Please open a till first.'], 400);
-        }
-
-        $till = Till::where('id', $currentTillId)
-            ->where('user_id', $userId)
-            ->whereNull('closed_at')
-            ->first();
-
-        if (!$till) {
-            Session::forget('current_till_id');
-            return response()->json(['message' => 'The associated till is not valid or has been closed. Please open a new till.'], 400);
-        }
-
-        $order = Order::create([
-            'customer_id' => $request->customer_id,
-            'user_id' => $userId,
-        ]);
-
-        $cart = $request->user()->cart()->get();
-        foreach ($cart as $item) {
-            $originalPricePerUnit = $item->price;
-            $quantity = $item->pivot->quantity;
-            $discountPercentage = $item->pivot->discount_percentage ?? 0;
-            $priceAfterDiscountPerUnit = $originalPricePerUnit * (1 - ($discountPercentage / 100));
-            $totalPriceForItemAfterDiscount = $priceAfterDiscountPerUnit * $quantity;
-
-            $order->items()->create([
-                'price' => $originalPricePerUnit * $quantity,
-                'quantity' => $quantity,
-                'product_id' => $item->id,
-                'discount_percentage' => $discountPercentage,
-                'price_after_discount' => $totalPriceForItemAfterDiscount,
+        DB::beginTransaction();
+        try {
+            $order = Order::create([
+                'customer_id' => $request->customer_id,
+                'user_id' => $request->user()->id,
+                'discount_type' => $request->discount_type,
+                'discount_value' => $request->discount_value,
             ]);
-            $item->quantity = $item->quantity - $quantity;
-            $item->save();
+
+            $cart = $request->user()->cart()->get();
+
+            foreach ($cart as $item) {
+                $originalPricePerUnit = $item->price;
+                $quantity = $item->pivot->quantity;
+                $discountPercentage = $item->pivot->discount_percentage ?? 0;
+
+                $totalOriginalPriceForItem = $originalPricePerUnit * $quantity;
+                $priceAfterItemDiscountPerUnit = $originalPricePerUnit * (1 - ($discountPercentage / 100));
+                $totalPriceForItemAfterItemDiscount = $priceAfterItemDiscountPerUnit * $quantity;
+
+                $order->orderItems()->create([
+                    'price' => $originalPricePerUnit,
+                    'quantity' => $quantity,
+                    'product_id' => $item->id,
+                    'discount_percentage' => $discountPercentage,
+                    'price_after_discount' => $totalPriceForItemAfterItemDiscount,
+                ]);
+
+                $product = Product::find($item->id);
+                if ($product) {
+                    $product->quantity -= $quantity;
+                    $product->save();
+                }
+            }
+
+            $request->user()->cart()->detach();
+
+            $order->payments()->create([
+                'amount' => $request->amount,
+                'user_id' => $request->user()->id,
+                'till_id' => $request->till_id,
+            ]);
+
+            DB::commit();
+
+            return response()->json(['message' => 'Order created successfully!', 'order_id' => $order->id], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to create order. Please try again.', 'error' => $e->getMessage()], 500);
         }
-
-        $request->user()->cart()->detach();
-
-        $order->payments()->create([
-            'amount' => $request->amount,
-            'user_id' => $userId,
-            'till_id' => $currentTillId,
-        ]);
-
-        return response()->json(['message' => 'Order created successfully!', 'order_id' => $order->id], 201);
     }
 
     public function partialPayment(Request $request)
     {
-        // return $request;
         $orderId = $request->order_id;
         $amount = $request->amount;
 
-        // Find the order
         $order = Order::findOrFail($orderId);
 
-        // Check if the amount exceeds the remaining balance
         $remainingAmount = $order->total() - $order->receivedAmount();
         if ($amount > $remainingAmount) {
             return redirect()->route('orders.index')->withErrors('Amount exceeds remaining balance');
         }
 
-        // Save the payment
-        DB::transaction(function () use ($order, $amount) {
+        DB::transaction(function () use ($order, $amount, $request) {
             $order->payments()->create([
                 'amount' => $amount,
-                'user_id' => Auth::user()->id,
+                'user_id' => $request->user()->id,
+                'till_id' => $request->till_id,
             ]);
         });
 

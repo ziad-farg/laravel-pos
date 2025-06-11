@@ -26,7 +26,7 @@ class HomeController extends Controller
      */
     public function index()
     {
-        $orders = Order::with(['items', 'payments'])->get();
+        $orders = Order::with(['orderItems', 'payments'])->get();
         $customers_count = Customer::count();
 
         $low_stock_products = Product::where('quantity', '<', 10)->get();

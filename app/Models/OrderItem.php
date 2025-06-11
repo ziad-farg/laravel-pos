@@ -24,9 +24,4 @@ class OrderItem extends Model
     {
         return $this->belongsTo(Order::class);
     }
-
-    public function getPriceAfterDiscountAttribute()
-    {
-        return $this->price - ($this->price * ($this->discount_percentage / 100));
-    }
 }
