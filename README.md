@@ -68,7 +68,7 @@ Rename or copy `.env.example` file to `.env` 1.`php artisan key:generate` to gen
 - [x] Support multiple payment methods (cash, card, etc.)
 - [x] Apply discount by specific items
 - [x] Apply discount by invoice (overall discount)
-- [ ] Print or download sale receipt
+- [x] Print or download sale receipt
 
 #### 📦 Orders
 - [x] List all sales/orders with filters (date)
