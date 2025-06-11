@@ -55,7 +55,7 @@ class OrderController extends Controller
                 $totalPriceForItemAfterItemDiscount = $priceAfterItemDiscountPerUnit * $quantity;
 
                 $order->orderItems()->create([
-                    'price' => $originalPricePerUnit,
+                    'price' => $totalOriginalPriceForItem,
                     'quantity' => $quantity,
                     'product_id' => $item->id,
                     'discount_percentage' => $discountPercentage,
