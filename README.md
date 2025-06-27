@@ -80,7 +80,7 @@ Rename or copy `.env.example` file to `.env` 1.`php artisan key:generate` to gen
 - [x] Customer list
     - [x] Filter customer with (name, phone and email)
 - [x] Add/Edit customer information (name, phone, email, address)
-- [ ] View customer order history
+- [x] View customer order history
 
 #### 🚚 Supplier
 - [x] Supplier list
