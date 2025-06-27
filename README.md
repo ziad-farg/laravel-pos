@@ -72,28 +72,28 @@ Rename or copy `.env.example` file to `.env` 1.`php artisan key:generate` to gen
 
 #### 📦 Orders
 - [x] List all sales/orders with filters (date)
-    - [ ] Add filter (status, customer)
+    - [x] Add filter (status, customer)
 - [x] View detailed order/invoice page
-- [ ] Support order returns and refunds
+- [x] Support order returns and refunds
 
 #### 👥 Customers
 - [x] Customer list
-    - [ ] Filter customer with (name, phone and email)
+    - [x] Filter customer with (name, phone and email)
 - [x] Add/Edit customer information (name, phone, email, address)
 - [ ] View customer order history
 
 #### 🚚 Supplier
 - [x] Supplier list
-    - [ ] Filter supplier with (name, phone and email)
+    - [x] Filter supplier with (name, phone and email)
 - [x] Add/Edit supplier info (name, phone, email, ...)
-- [ ] View purchase/order history by supplier
+- [x] View purchase/order history by supplier
 
 #### 📥 Purchase
-- [ ] Add purchase form (select supplier, date, invoice number)
-- [ ] Add purchased items with quantity and cost
-- [ ] Update product stock automatically on purchase
-- [ ] View list of purchases with filters (supplier, date)
-- [ ] Generate printable purchase invoice
+- [x] Add purchase form (select supplier, date, invoice number)
+- [x] Add purchased items with quantity and cost
+- [x] Update product stock automatically on purchase
+- [x] View list of purchases with filters (supplier, date)
+- [x] Generate printable purchase invoice
 
 #### ⚙️ Settings
 - [x] Store settings (name, currency)
