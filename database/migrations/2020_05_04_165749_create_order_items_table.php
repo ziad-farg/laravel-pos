@@ -15,14 +15,14 @@ return new class extends Migration
     {
         Schema::create('order_items', function (Blueprint $table) {
             $table->id();
-            $table->decimal('price', 8, 4);
+            $table->decimal('price', 8, 2)->default(0);
             $table->integer('quantity')->default(1);
-            $table->foreignId('order_id');
-            $table->foreignId('product_id');
+            $table->foreignId('order_id')->constrained()->onDelete('cascade');
+            $table->foreignId('product_id')->constrained()->restrictOnDelete();
+            $table->string('discount_type')->nullable()->comment('Type of discount applied to the item, e.g., percentage, fixed');
+            $table->decimal('discount_value', 8, 2)->default(0)->comment('Value of the discount applied to the item');
+            $table->integer('quantity_returned')->default(0)->comment('Number of items returned for this order item');
             $table->timestamps();
-
-            $table->foreign('order_id')->references('id')->on('orders')->onDelete('cascade');
-            $table->foreign('product_id')->references('id')->on('products')->onDelete('cascade');
         });
     }
 

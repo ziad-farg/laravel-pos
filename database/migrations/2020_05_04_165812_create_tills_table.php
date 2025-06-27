@@ -16,10 +16,10 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->timestamp('opened_at');
             $table->timestamp('closed_at')->nullable();
-            $table->decimal('cash', 10, 1)->default(0.0);
-            $table->decimal('visa', 10, 1)->default(0.0);
-            $table->decimal('shortage', 10, 1)->default(0.0);
-            $table->decimal('surplus', 10, 1)->default(0.0);
+            $table->decimal('cash_handed_over', 8, 2)->default(0.0);
+            $table->decimal('visa_handed_over', 8, 2)->default(0.0);
+            $table->decimal('shortage', 8, 2)->default(0.0);
+            $table->decimal('surplus', 8, 2)->default(0.0);
             $table->timestamps();
         });
     }

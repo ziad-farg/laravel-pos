@@ -15,12 +15,13 @@ return new class extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('customer_id')->nullable();
-            $table->foreignId('user_id');
+            $table->foreignId('customer_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('invoice_discount_type')->nullable();
+            $table->decimal('invoice_discount_value', 8, 2)->default(0)->nullable();
+            $table->string('status')->comment('Order status, e.g., completed, fully_returned, partially_returned');
+            $table->decimal('returned_amount', 8, 2)->default(0);
             $table->timestamps();
-
-            $table->foreign('customer_id')->references('id')->on('customers')->onDelete('set null');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
         });
     }
 

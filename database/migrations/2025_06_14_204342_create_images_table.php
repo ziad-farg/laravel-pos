@@ -11,8 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('user_cart', function (Blueprint $table) {
-            $table->decimal('discount_percentage', 5, 1)->default(0.0);
+        Schema::create('images', function (Blueprint $table) {
+            $table->id();
+            $table->string('url')->comment('URL of the image');
+            $table->morphs('imageable');
+            $table->timestamps();
         });
     }
 
@@ -21,8 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('user_cart', function (Blueprint $table) {
-            $table->dropColumn('discount_percentage');
-        });
+        Schema::dropIfExists('images');
     }
 };

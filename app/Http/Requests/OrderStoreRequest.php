@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\OrderStatus;
+use App\Enums\DiscountType;
+use App\Enums\PaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
 
 class OrderStoreRequest extends FormRequest
@@ -25,7 +28,12 @@ class OrderStoreRequest extends FormRequest
     {
         return [
             'customer_id' => 'nullable|integer|exists:customers,id',
-            'amount' => 'required|numeric|min:0',
+            'invoice_discount_type' => 'nullable|in:' . implode(',', DiscountType::values()),
+            'invoice_discount_value' => 'nullable|numeric|min:0',
+            'returned_amount' => 'nullable|numeric|min:0',
+            'amount' => 'required|numeric|min:0.01',
+            'till_id' => 'nullable|exists:tills,id',
+            'payment_method' => 'required|string|in:' . implode(',', PaymentMethod::values()),
         ];
     }
 }

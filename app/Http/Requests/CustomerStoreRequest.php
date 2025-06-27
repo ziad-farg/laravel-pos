@@ -26,10 +26,11 @@ class CustomerStoreRequest extends FormRequest
         return [
             'first_name' => 'required|string|max:20',
             'last_name' => 'required|string|max:20',
-            'email' => 'nullable|email',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-            'avatar' => 'nullable|image',
+            'email' => 'nullable|email|unique:customers,email|max:255',
+            'phone' => 'nullable|string|unique:customers,phone|max:20',
+            'address' => 'nullable|string|max:255',
+            'user_id' => 'nullable|exists:users,id',
+            'image' => 'nullable|image|max:2048',
         ];
     }
 }

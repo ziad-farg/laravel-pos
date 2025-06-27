@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\CustomerStoreRequest;
+use App\Http\Requests\CustomerUpdateRequest;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -14,15 +15,41 @@ class CustomerController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function index()
+    public function index(Request $request)
     {
-        if (request()->wantsJson()) {
-            return response(
-                Customer::all()
-            );
+        $customersQuery = Customer::query();
+
+        // Check if the request has a 'search' parameter and is not empty
+        if ($request->has('search') && !empty($request->search)) {
+
+            // This will search in first_name, last_name, email, and phone fields
+            $customersQuery->where(function ($query) use ($request) {
+                $query->where('first_name', 'LIKE', '%' . $request->search . '%')
+                    ->orWhere('last_name', 'LIKE', '%' . $request->search . '%')
+                    ->orWhere('email', 'LIKE', '%' . $request->search . '%')
+                    ->orWhere('phone', 'LIKE', '%' . $request->search . '%');
+            });
         }
-        $customers = Customer::latest()->paginate(10);
-        return view('customers.index')->with('customers', $customers);
+
+        $customers = $customersQuery->latest()->paginate(10);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Customers retrieved successfully',
+                'data' => $customers->items(),
+                'pagination' => [
+                    'total' => $customers->total(),
+                    'per_page' => $customers->perPage(),
+                    'current_page' => $customers->currentPage(),
+                    'last_page' => $customers->lastPage(),
+                    'from' => $customers->firstItem(),
+                    'to' => $customers->lastItem(),
+                ],
+            ]);
+        }
+
+        return view('customers.index', compact('customers'));
     }
 
     /**
@@ -43,26 +70,36 @@ class CustomerController extends Controller
      */
     public function store(CustomerStoreRequest $request)
     {
-        $avatar_path = '';
 
-        if ($request->hasFile('avatar')) {
-            $avatar_path = $request->file('avatar')->store('customers', 'public');
+        $customer = Customer::create($request->validated());
+
+        if ($request->hasFile('image')) {
+            $image_path = $request->file('image')->store('customers', 'public');
+
+            $customer->image()->create([
+                'url' => $image_path,
+            ]);
         }
-
-        $customer = Customer::create([
-            'first_name' => $request->first_name,
-            'last_name' => $request->last_name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'address' => $request->address,
-            'avatar' => $avatar_path,
-            'user_id' => $request->user()->id,
-        ]);
 
         if (!$customer) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('customer.error_creating')
+                ], 500);
+            }
             return redirect()->back()->with('error', __('customer.error_creating'));
         }
-        return redirect()->route('customers.index')->with('success', __('customer.succes_creating'));
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => __('customer.success_creating'),
+                'data' => $customer
+            ], 201);
+        }
+
+        return redirect()->route('customers.index')->with('success', __('customer.success_creating'));
     }
 
     /**
@@ -71,7 +108,10 @@ class CustomerController extends Controller
      * @param  \App\Models\Customer  $customer
      * @return \Illuminate\Http\Response
      */
-    public function show(Customer $customer) {}
+    public function show(Customer $customer)
+    {
+        //
+    }
 
     /**
      * Show the form for editing the specified resource.
@@ -91,41 +131,82 @@ class CustomerController extends Controller
      * @param  \App\Models\Customer  $customer
      * @return \Illuminate\Http\Response
      */
-    public function update(Request $request, Customer $customer)
+    public function update(CustomerUpdateRequest $request, Customer $customer)
     {
-        $customer->first_name = $request->first_name;
-        $customer->last_name = $request->last_name;
-        $customer->email = $request->email;
-        $customer->phone = $request->phone;
-        $customer->address = $request->address;
 
-        if ($request->hasFile('avatar')) {
-            // Delete old avatar
-            if ($customer->avatar) {
-                Storage::delete($customer->avatar);
+        $customer->update($request->validated());
+
+        if ($request->hasFile('image')) {
+
+            // Delete old image
+            if ($customer->image) {
+                Storage::disk('public')->delete($customer->image->url);
+                $customer->image()->delete();
             }
-            // Store avatar
-            $avatar_path = $request->file('avatar')->store('customers', 'public');
-            // Save to Database
-            $customer->avatar = $avatar_path;
+
+            $imagePath = $request->file('image')->store('customer_images', 'public');
+            $customer->image()->create([
+                'url' => $imagePath,
+            ]);
         }
 
-        if (!$customer->save()) {
+        // Check if the customer was updated successfully
+        if (!$customer) {
+            // If the request expects JSON, return a JSON response
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('customer.error_updating')
+                ], 500);
+            }
+            // Otherwise, redirect back with an error message
             return redirect()->back()->with('error', __('customer.error_updating'));
         }
+
+        // If the request expects JSON, return a JSON response
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => __('customer.success_updating'),
+                'data' => $customer
+            ]);
+        }
+
+        // Otherwise, redirect to the customers index with a success message
         return redirect()->route('customers.index')->with('success', __('customer.success_updating'));
     }
 
-    public function destroy(Customer $customer)
+    public function destroy(Customer $customer, Request $request)
     {
-        if ($customer->avatar) {
-            Storage::delete($customer->avatar);
+        // Check if the customer has an image and delete it
+        if ($customer->image) {
+            Storage::disk('public')->delete($customer->image->url);
+            $customer->image()->delete();
         }
 
-        $customer->delete();
+        // Attempt to delete the customer
+        if (!$customer->delete()) {
+            // If the request expects JSON, return a JSON response
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('customer.error_deleting')
+                ], 500);
+            }
 
-        return response()->json([
-            'success' => true
-        ]);
+            // Otherwise, redirect back with an error message
+            return redirect()->back()->with('error', __('customer.error_deleting'));
+        }
+
+        // If the request expects JSON, return a JSON response
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => __('customer.success_deleting')
+            ]);
+        }
+
+        // Otherwise, redirect to the customers index with a success message
+        return redirect()->route('customers.index')->with('success', __('customer.success_deleting'));
     }
 }

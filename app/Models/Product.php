@@ -3,25 +3,45 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
     protected $fillable = [
         'name',
         'description',
-        'image',
         'barcode',
         'price',
-        'quantity',
+        'stock',
         'status'
     ];
 
-    public function getImageUrl()
+    protected $casts = [
+        'price' => 'decimal:2',
+        'stock' => 'integer',
+    ];
+
+    public function orderItems()
     {
-        if ($this->image) {
-            return Storage::url($this->image);
-        }
-        return asset('images/img-placeholder.jpg');
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function userCartItems()
+    {
+        return $this->hasMany(UserCartItem::class);
+    }
+
+    public function saleReturnItems()
+    {
+        return $this->hasMany(SaleReturnItem::class);
+    }
+
+    public function purchaseCarts()
+    {
+        return $this->hasMany(PurchaseCart::class);
+    }
+
+    public function image()
+    {
+        return $this->morphOne(Image::class, 'imageable');
     }
 }

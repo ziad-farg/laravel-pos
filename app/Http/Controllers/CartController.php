@@ -3,118 +3,326 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Enums\DiscountType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use App\Http\Requests\AddToCartRequest;
+use App\Http\Requests\RemoveCartItemRequest;
+use App\Http\Requests\ApplyInvoiceDiscountRequest;
 
 class CartController extends Controller
 {
+
+    /**
+     * Display the user's cart.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
     public function index(Request $request)
     {
-        if ($request->wantsJson()) {
-            return response(
-                $request->user()->cart()->get()
-            );
+        $user = Auth::user();
+
+        $userCart = $user->userCart()->firstOrCreate(['user_id' => $user->id]);
+
+        $userCart->load(['items.product', 'customer']);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => __('cart.retrieved_successfully'),
+                'data' => $userCart
+            ]);
         }
-        return view('cart.index');
+
+        return view('cart.index', compact('userCart'));
     }
 
-    public function store(Request $request)
+    /**
+     * Store items in the user's cart.
+     *
+     * @param AddToCartRequest $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(AddToCartRequest $request)
     {
-        $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.barcode' => 'required|string|exists:products,barcode',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.discount_percentage' => 'nullable|numeric|min:0|max:100',
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $addedOrUpdatedProducts = [];
+            $user = Auth::user();
+            $userCart = $user->userCart()->firstOrCreate(['user_id' => $user->id]);
 
-        foreach ($request->items as $cartItemData) {
-            $barcode = $cartItemData['barcode'];
-            $requestedQuantity = $cartItemData['quantity'];
-            $discountPercentage = $cartItemData['discount_percentage'] ?? 0;
+            foreach ($request->items as $itemData) {
+                $barcode = $itemData['barcode'];
+                $requestedQuantity = $itemData['quantity'];
+                $discountValue = $itemData['discount_value'] ?? 0;
+                $discountType = isset($itemData['discount_type']) ? DiscountType::from($itemData['discount_type']) : null;
 
-            $product = Product::where('barcode', $barcode)->first();
+                $product = Product::where('barcode', $barcode)->first();
 
-            if (!$product) {
-                continue;
-            }
-
-            $cartItem = $request->user()->cart()->where('product_id', $product->id)->first();
-
-            if ($cartItem) {
-                $newQuantityInCart = $cartItem->pivot->quantity + $requestedQuantity;
-
-                if ($product->quantity < $newQuantityInCart) {
+                if (!$product) {
                     continue;
                 }
 
-                $cartItem->pivot->quantity = $newQuantityInCart;
-                $cartItem->pivot->discount_percentage = $discountPercentage;
-                $cartItem->pivot->save();
-            } else {
+                $cartItem = $userCart->items()->where('product_id', $product->id)->first();
 
-                if ($product->quantity < $requestedQuantity) {
+                $currentProductPrice = $product->price;
 
-                    continue;
+                if ($cartItem) {
+                    $newQuantityInCart = $cartItem->quantity + $requestedQuantity;
+
+                    if ($product->stock < $newQuantityInCart) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => __('cart.not_enough_stock_for_add', ['product' => $product->name, 'available' => $product->stock - $cartItem->quantity]),
+                        ], 400);
+                    }
+
+                    $cartItem->update([
+                        'quantity' => $newQuantityInCart,
+                        'price_at_add' => $currentProductPrice,
+                        'discount_type' => $discountType,
+                        'discount_value' => $discountValue,
+                    ]);
+                } else {
+                    if ($product->stock < $requestedQuantity) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => __('cart.not_enough_stock', ['product' => $product->name, 'available' => $product->stock]),
+                        ], 400);
+                    }
+
+                    $cartItem = $userCart->items()->create([
+                        'product_id' => $product->id,
+                        'quantity' => $requestedQuantity,
+                        'price_at_add' => $currentProductPrice,
+                        'discount_type' => $discountType,
+                        'discount_value' => $discountValue,
+                    ]);
                 }
-
-                $request->user()->cart()->attach($product->id, [
-                    'quantity' => $requestedQuantity,
-                    'discount_percentage' => $discountPercentage
-                ]);
             }
 
-            $addedOrUpdatedProducts[] = $product->id;
+            $userCart->update([
+                'invoice_discount_type' => $request->input('invoice_discount_type'),
+                'invoice_discount_value' => $request->input('invoice_discount_value', 0.0),
+            ]);
+
+            DB::commit();
+
+            $userCart->load(['items.product', 'customer']);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => __('cart.items_processed_successfully'),
+                'data' => $userCart,
+            ], 200);
+        } catch (\Exception | \Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => __('cart.error_processing_items') . ' ' . $e->getMessage()
+            ], 500);
         }
-
-
-        return response()->json([
-            'message' => __('cart.items_processed_successfully'),
-            'success' => true,
-            'cart_items' => $request->user()->cart()->withPivot('quantity', 'discount_percentage')->get(),
-        ], 200);
     }
 
+
+    /**
+     * Change the quantity of an item in the user's cart.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
     public function changeQty(Request $request)
     {
-        $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|integer|min:1',
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $product = Product::find($request->product_id);
-        $cart = $request->user()->cart()->where('id', $request->product_id)->first();
+            $user = Auth::user();
+            $userCart = $user->userCart;
 
-        if ($cart) {
-            // check product quantity
-            if ($product->quantity < $request->quantity) {
-                return response([
-                    'message' => __('cart.available', ['quantity' => $product->quantity]),
+            if (!$userCart) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('cart.no_active_cart_found')
                 ], 400);
             }
-            $cart->pivot->quantity = $request->quantity;
-            $cart->pivot->save();
+
+            $productId = $request->product_id;
+            $newQuantity = $request->quantity;
+
+            $cartItem = $userCart->items()->where('product_id', $productId)->first();
+
+            if (!$cartItem) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('cart.item_not_found_in_cart')
+                ], 404);
+            }
+
+            $product = Product::find($productId);
+
+            if (!$product) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('product.not_found')
+                ], 404);
+            }
+
+            if ($product->stock < $newQuantity) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('cart.available', ['quantity' => $product->stock]),
+                ], 400);
+            }
+
+            $cartItem->update(['quantity' => $newQuantity]);
+
+            DB::commit();
+
+            $userCart->load(['items.product', 'customer']);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => __('cart.quantity_updated_successfully'),
+                'data' => $userCart
+            ], 200);
+        } catch (\Exception | \Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => __('cart.error_updating_quantity') . ' ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Remove an item from the user's cart.
+     *
+     * @param RemoveCartItemRequest $request
+     * @return \Illuminate\Http\Response
+     */
+    public function delete(RemoveCartItemRequest $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $user = Auth::user();
+            $userCart = $user->userCart;
+
+            if (!$userCart) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('cart.no_active_cart_found')
+                ], 400);
+            }
+
+            $productId = $request->product_id;
+
+            $deletedCount = $userCart->items()->where('product_id', $productId)->delete();
+
+            if ($deletedCount == 0) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('cart.item_not_found_in_cart')
+                ], 404);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => __('cart.item_removed_successfully')
+            ], 200);
+        } catch (\Exception | \Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => __('cart.error_removing_item') . ' ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Empty the user's cart.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function empty()
+    {
+        try {
+            DB::beginTransaction();
+
+            $user = Auth::user();
+            $userCart = $user->userCart;
+
+            if (!$userCart) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'success',
+                    'message' => __('cart.cart_already_empty')
+                ], 200);
+            }
+
+            $userCart->items()->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => __('cart.cart_emptied_successfully')
+            ], 200);
+        } catch (\Exception | \Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => __('cart.error_emptying_cart') . ' ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Apply invoice discount to the user's cart.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function applyInvoiceDiscount(ApplyInvoiceDiscountRequest $request)
+    {
+        $user = Auth::user();
+        $userCart = $user->userCart;
+
+        if (!$userCart) {
+            return response()->json([
+                'status' => 'error',
+                'message' => __('cart.no_active_cart_found')
+            ], 404);
         }
 
-        return response([
-            'success' => true
+        $validatedData = $request->validated();
+
+        $userCart->update([
+            'invoice_discount_type' => $validatedData['invoice_discount_type'],
+            'invoice_discount_value' => $validatedData['invoice_discount_value'],
         ]);
-    }
 
-    public function delete(Request $request)
-    {
-        $request->validate([
-            'product_id' => 'required|integer|exists:products,id'
+        $userCart->load(['items.product', 'customer']);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Invoice discount applied to cart successfully.',
+            'data' => $userCart
         ]);
-        $request->user()->cart()->detach($request->product_id);
-
-        return response('', 204);
-    }
-
-    public function empty(Request $request)
-    {
-        $request->user()->cart()->detach();
-
-        return response('', 204);
     }
 }

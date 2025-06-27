@@ -13,13 +13,13 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::create('user_cart', function (Blueprint $table) {
-            $table->foreignId('user_id');
-            $table->foreignId('product_id');
-            $table->unsignedInteger('quantity');
-
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-            $table->foreign('product_id')->references('id')->on('products')->onDelete('cascade');
+        Schema::create('user_carts', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('customer_id')->nullable()->constrained()->onDelete('cascade');
+            $table->string('invoice_discount_type')->nullable();
+            $table->decimal('invoice_discount_value', 8, 2)->default(0);
+            $table->timestamps();
         });
     }
 

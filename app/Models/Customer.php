@@ -13,12 +13,33 @@ class Customer extends Model
         'email',
         'phone',
         'address',
-        'avatar',
         'user_id',
     ];
 
-    public function getAvatarUrl()
+    protected $appends = ['full_name'];
+
+    public function user()
     {
-        return Storage::url($this->avatar);
+        return $this->belongsTo(User::class);
+    }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    public function userCarts()
+    {
+        return $this->hasMany(UserCart::class);
+    }
+
+    public function image()
+    {
+        return $this->morphOne(Image::class, 'imageable');
+    }
+
+    public function getFullNameAttribute()
+    {
+        return "{$this->first_name} {$this->last_name}";
     }
 }

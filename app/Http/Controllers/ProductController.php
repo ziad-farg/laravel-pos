@@ -18,15 +18,31 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
-        $products = new Product();
-        if ($request->search) {
-            $products = $products->where('name', 'LIKE', "%{$request->search}%");
+        $productsQuery = Product::query();
+
+        if ($request->has('search') && !empty($request->search)) {
+            $products = $productsQuery->where('name', 'LIKE', "%{$request->search}%");
         }
-        $products = $products->latest()->paginate(10);
-        if (request()->wantsJson()) {
-            return ProductResource::collection($products);
+
+        $products = $productsQuery->latest()->paginate(10);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Products retrieved successfully',
+                'data' => $products->items(),
+                'pagination' => [
+                    'total' => $products->total(),
+                    'per_page' => $products->perPage(),
+                    'current_page' => $products->currentPage(),
+                    'last_page' => $products->lastPage(),
+                    'from' => $products->firstItem(),
+                    'to' => $products->lastItem(),
+                ],
+            ]);
         }
-        return view('products.index')->with('products', $products);
+
+        return view('products.index', compact('products'));
     }
 
     /**
@@ -47,25 +63,25 @@ class ProductController extends Controller
      */
     public function store(ProductStoreRequest $request)
     {
-        $image_path = '';
+        $request->validate([
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        $product = Product::create($request->validated());
+
 
         if ($request->hasFile('image')) {
             $image_path = $request->file('image')->store('products', 'public');
-        }
 
-        $product = Product::create([
-            'name' => $request->name,
-            'description' => $request->description,
-            'image' => $image_path,
-            'barcode' => $request->barcode,
-            'price' => $request->price,
-            'quantity' => $request->quantity,
-            'status' => $request->status
-        ]);
+            $product->image()->create([
+                'url' => $image_path,
+            ]);
+        }
 
         if (!$product) {
             return redirect()->back()->with('error', __('product.error_creating'));
         }
+
         return redirect()->route('products.index')->with('success', __('product.success_creating'));
     }
 
@@ -100,27 +116,29 @@ class ProductController extends Controller
      */
     public function update(ProductUpdateRequest $request, Product $product)
     {
-        $product->name = $request->name;
-        $product->description = $request->description;
-        $product->barcode = $request->barcode;
-        $product->price = $request->price;
-        $product->quantity = $request->quantity;
-        $product->status = $request->status;
+
+        $request->validate([
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        $product->update($request->validated());
 
         if ($request->hasFile('image')) {
-            // Delete old image
             if ($product->image) {
-                Storage::delete($product->image);
+                Storage::disk('public')->delete($product->image->url);
+                $product->image()->delete();
             }
-            // Store image
-            $image_path = $request->file('image')->store('products', 'public');
-            // Save to Database
-            $product->image = $image_path;
+
+            $imagePath = $request->file('image')->store('product_images', 'public');
+            $product->image()->create([
+                'url' => $imagePath,
+            ]);
         }
 
-        if (!$product->save()) {
+        if (!$product) {
             return redirect()->back()->with('error', __('product.error_updating'));
         }
+
         return redirect()->route('products.index')->with('success', __('product.success_updating'));
     }
 
@@ -130,15 +148,30 @@ class ProductController extends Controller
      * @param  \App\Models\Product  $product
      * @return \Illuminate\Http\Response
      */
-    public function destroy(Product $product)
+    public function destroy(Product $product, Request $request)
     {
         if ($product->image) {
-            Storage::delete($product->image);
+            Storage::disk('public')->delete($product->image->url);
+            $product->image()->delete();
         }
-        $product->delete();
 
-        return response()->json([
-            'success' => true
-        ]);
+        if (!$product->delete()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('product.error_deleting')
+                ], 500);
+            }
+            return redirect()->back()->with('error', __('product.error_deleting'));
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => __('product.success_deleting')
+            ]);
+        }
+
+        return redirect()->route('products.index')->with('success', __('product.success_deleting'));
     }
 }

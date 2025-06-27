@@ -17,10 +17,10 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->string('image')->nullable();
             $table->string('barcode')->unique();
-            $table->decimal('price', 8, 2);
-            $table->boolean('status')->default(true);
+            $table->decimal('price', 8, 2)->default(0.00);
+            $table->unsignedInteger('stock')->default(0)->comment('Current stock level of the product');
+            $table->boolean('status')->default(true)->comment('Indicates if the product is active or inactive');
             $table->timestamps();
         });
     }
