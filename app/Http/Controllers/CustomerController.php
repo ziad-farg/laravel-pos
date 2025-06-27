@@ -110,7 +110,18 @@ class CustomerController extends Controller
      */
     public function show(Customer $customer)
     {
-        //
+        $customer->load([
+            'orders' => function ($query) {
+                $query->orderBy('created_at', 'desc');
+            },
+            'orders.orderItems.product'
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Customer details and order history retrieved successfully.',
+            'data' => $customer
+        ]);
     }
 
     /**
